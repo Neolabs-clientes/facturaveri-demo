@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FacturaVeri — Facturación VeriFactu</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧾</text></svg>">
+<style>
+:root{--azul:#1a3a6b;--oro:#c9a227;--gris:#5a6a7a;--fondo:#f4f6f9;--blanco:#fff}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--fondo);color:#22303c;font-size:15px}
+header{background:var(--azul);color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center}
+header h1{font-size:19px;font-weight:600}
+header .emp{font-size:13px;opacity:.85}
+main{max-width:1100px;margin:22px auto;padding:0 16px;display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media(max-width:850px){main{grid-template-columns:1fr}}
+.card{background:var(--blanco);border-radius:10px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.card h2{font-size:15px;color:var(--azul);margin-bottom:14px;border-bottom:1px solid #e6ebf1;padding-bottom:8px}
+label{display:block;font-size:12.5px;color:var(--gris);margin:10px 0 4px}
+input,select{width:100%;padding:9px 10px;border:1px solid #d4dce4;border-radius:6px;font-size:14px}
+input:focus{outline:2px solid #c9a22744;border-color:var(--oro)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{background:var(--azul);color:#fff;border:none;padding:11px 16px;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;margin-top:14px}
+button.sec{background:#eef2f7;color:var(--azul)}
+button.verde{background:#1e7d4f}
+button:disabled{opacity:.5;cursor:not-allowed}
+#estado{display:none;margin-top:12px;padding:10px 12px;border-radius:6px;font-size:13px}
+#estado.ok{display:block;background:#e8f6ee;color:#1e7d4f;border:1px solid #b9e3cc}
+#estado.err{display:block;background:#fdecec;color:#b3261e;border:1px solid #f5c6c6}
+#factura{font-size:13.5px;line-height:1.7}
+#factura table{width:100%;border-collapse:collapse;margin-top:10px}
+#factura td,#factura th{border:1px solid #e0e6ec;padding:7px 9px;text-align:left}
+#factura th{background:#f0f4f9}
+.qr{text-align:center;margin-top:12px}
+.cadena{font-family:Consolas,monospace;font-size:10.5px;background:#f7f9fc;border:1px solid #e3e9f0;border-radius:6px;padding:10px;margin-top:10px;word-break:break-all;max-height:130px;overflow:auto}
+.mono{font-family:Consolas,monospace;font-size:12px;background:#f7f9fc;padding:2px 6px;border-radius:4px}
+.acciones{display:flex;gap:8px;flex-wrap:wrap}
+.acciones button{margin-top:10px;font-size:12.5px;padding:8px 12px}
+footer{text-align:center;color:#9aa7b4;font-size:12px;padding:20px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧾 FacturaVeri <span class="emp">| Facturación conforme al RD 1007/2023</span></h1>
+  <div class="emp" id="hdrEmpresa">Empresa</div>
+</header>
+
+<main>
+  <!-- IZQUIERDA: nueva factura -->
+  <div class="card">
+    <h2>Nueva factura</h2>
+    <div class="row">
+      <div>
+        <label>Cliente</label>
+        <input id="f_cliente" placeholder="Nombre del cliente">
+      </div>
+      <div>
+        <label>NIF del cliente</label>
+        <input id="f_nif" placeholder="B12345678">
+      </div>
+    </div>
+    <label>Concepto / descripción</label>
+    <input id="f_concepto" placeholder="Servicio prestado...">
+    <div class="row">
+      <div>
+        <label>Base imponible (€)</label>
+        <input id="f_base" type="number" step="0.01" value="100.00">
+      </div>
+      <div>
+        <label>IVA</label>
+        <select id="f_iva">
+          <option value="21">21%</option>
+          <option value="10">10%</option>
+          <option value="4">4%</option>
+          <option value="0">Exento</option>
+        </select>
+      </div>
+    </div>
+    <div class="acciones">
+      <button onclick="emitirFactura()">Emitir factura</button>
+      <button class="sec" onclick="verificarCadena()">Verificar integridad</button>
+    </div>
+    <div id="estado"></div>
+  </div>
+
+  <!-- DERECHA: factura emitida + registro -->
+  <div class="card">
+    <h2>Última factura emitida</h2>
+    <div id="factura">
+      <p style="color:#9aa7b4">Todavía no has emitido ninguna factura.</p>
+    </div>
+    <div class="acciones">
+      <button class="verde" onclick="imprimirFactura()">Descargar PDF</button>
+      <button class="sec" onclick="exportarRegistro()">Exportar registro XML</button>
+      <button class="sec" onclick="exportarCadena()">Exportar cadena completa</button>
+    </div>
+    <h2 style="margin-top:18px">Registro VeriFactu</h2>
+    <div class="cadena" id="registro">—</div>
+  </div>
+</main>
+
+<footer>FacturaVeri — registros encadenados con hash SHA-256 según Orden HAC/1177/2024 · Tus datos se guardan localmente en este navegador</footer>
+
+<script>
+// ============ CONFIGURACIÓN DE LA EMPRESA (inyectada en el provisionamiento) ============
+var EMPRESA = {
+  nombre: "Instituto Dentofacial Avanzado IDEA",
+  nif: "",
+  direccion: "Madrid",
+  email: "clinicaidea@gmail.com"
+};
+var CADENA = "cadena_verifactu_" + EMPRESA.nif;
+// ========================================================================================
+
+document.getElementById('hdrEmpresa').textContent = EMPRESA.nombre + " · NIF " + EMPRESA.nif;
+
+function cargarCadena() {
+  try { return JSON.parse(localStorage.getItem(CADENA) || "[]"); } catch(e) { return []; }
+}
+function guardarCadena(arr) {
+  localStorage.setItem(CADENA, JSON.stringify(arr));
+}
+
+async function sha256(texto) {
+  var buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(texto));
+  return Array.from(new Uint8Array(buf)).map(function(b){ return b.toString(16).padStart(2,"0"); }).join("");
+}
+
+function numFactura(cadena) {
+  var anio = new Date().getFullYear();
+  var n = cadena.filter(function(r){ return r.anio === anio; }).length + 1;
+  return String(anio) + "-" + String(n).padStart(4, "0");
+}
+
+function fmtEuro(v) {
+  return new Intl.NumberFormat("es-ES", {style:"currency", currency:"EUR"}).format(v);
+}
+
+async function emitirFactura() {
+  var cliente = document.getElementById("f_cliente").value.trim();
+  var nifC = document.getElementById("f_nif").value.trim();
+  var concepto = document.getElementById("f_concepto").value.trim();
+  var base = parseFloat(document.getElementById("f_base").value);
+  var ivaPct = parseInt(document.getElementById("f_iva").value);
+  if (!cliente || !concepto || isNaN(base)) { setEstado("err", "Rellena cliente, concepto y base."); return; }
+
+  var cadena = cargarCadena();
+  var prevHash = cadena.length ? cadena[cadena.length-1].hash : "0".repeat(64);
+  var nFact = numFactura(cadena);
+  var iva = +(base * ivaPct / 100).toFixed(2);
+  var total = +(base + iva).toFixed(2);
+  var ahora = new Date();
+  var timestamp = ahora.toISOString();
+
+  var registro = {
+    tipo: "F1",                       // factura emitida
+    version: "1.0",
+    numero: nFact,
+    anio: ahora.getFullYear(),
+    fecha: ahora.toISOString().slice(0,10),
+    timestamp: timestamp,
+    emisor: { nombre: EMPRESA.nombre, nif: EMPRESA.nif, direccion: EMPRESA.direccion },
+    cliente: { nombre: cliente, nif: nifC },
+    concepto: concepto,
+    base: base,
+    ivaPct: ivaPct,
+    iva: iva,
+    total: total,
+    hashAnterior: prevHash
+  };
+
+  var textoHash = JSON.stringify(registro);
+  registro.hash = await sha256(textoHash);
+  registro.textoFirmado = textoHash;
+
+  cadena.push(registro);
+  guardarCadena(cadena);
+
+  mostrarFactura(registro);
+  mostrarRegistro(registro, cadena);
+  setEstado("ok", "Factura " + nFact + " emitida. Registro VeriFactu generado y encadenado (hash SHA-256).");
+}
+
+function mostrarFactura(r) {
+  var html = '<table>';
+  html += '<tr><th style="width:38%">Factura</th><td>' + r.numero + '</td></tr>';
+  html += '<tr><th>Fecha</th><td>' + r.fecha + '</td></tr>';
+  html += '<tr><th>Cliente</th><td>' + r.cliente.nombre + (r.cliente.nif ? ' (' + r.cliente.nif + ')' : '') + '</td></tr>';
+  html += '<tr><th>Concepto</th><td>' + r.concepto + '</td></tr>';
+  html += '<tr><th>Base</th><td>' + fmtEuro(r.base) + '</td></tr>';
+  html += '<tr><th>IVA (' + r.ivaPct + '%)</th><td>' + fmtEuro(r.iva) + '</td></tr>';
+  html += '<tr><th>Total</th><td><strong>' + fmtEuro(r.total) + '</strong></td></tr>';
+  html += '</table>';
+  html += '<p style="margin-top:8px">Registro: <span class="mono">' + r.hash.slice(0,20) + '…</span></p>';
+  document.getElementById("factura").innerHTML = html;
+}
+
+function mostrarRegistro(r, cadena) {
+  var resumen = cadena.map(function(x){
+    return "#" + x.numero + "  " + x.hash.slice(0,16) + "…  <- " + (x.hashAnterior.slice(0,16)) + "…";
+  }).join("\n");
+  document.getElementById("registro").textContent = resumen;
+}
+
+function setEstado(tipo, msg) {
+  var el = document.getElementById("estado");
+  el.className = tipo;
+  el.textContent = msg;
+}
+
+function imprimirFactura() {
+  var r = cargarCadena();
+  if (!r.length) { setEstado("err", "No hay facturas emitidas."); return; }
+  var ult = r[r.length-1];
+  var ventana = window.open("", "_blank");
+  ventana.document.write(
+    '<html><head><title>Factura ' + ult.numero + '</title><style>body{font-family:Arial;padding:30px;color:#222}h1{color:#1a3a6b}table{width:100%;border-collapse:collapse;margin-top:16px}td,th{border:1px solid #ccc;padding:8px;text-align:left}.tot{font-weight:bold;font-size:15px}.qr{font-family:monospace;font-size:11px;margin-top:20px}</style></head><body>' +
+    '<h1>FACTURA ' + ult.numero + '</h1>' +
+    '<p><strong>' + EMPRESA.nombre + '</strong> · NIF ' + EMPRESA.nif + '<br>' + EMPRESA.direccion + '<br>' + EMPRESA.email + '</p>' +
+    '<p>Fecha: ' + ult.fecha + '<br>Cliente: ' + ult.cliente.nombre + (ult.cliente.nif ? ' · NIF ' + ult.cliente.nif : '') + '</p>' +
+    '<table><tr><th>Concepto</th><th>Base</th><th>IVA ' + ult.ivaPct + '%</th><th>Total</th></tr>' +
+    '<tr><td>' + ult.concepto + '</td><td>' + fmtEuro(ult.base) + '</td><td>' + fmtEuro(ult.iva) + '</td><td class="tot">' + fmtEuro(ult.total) + '</td></tr></table>' +
+    '<p class="tot">TOTAL: ' + fmtEuro(ult.total) + '</p>' +
+    '<div class="qr">Registro VeriFactu: ' + ult.hash.slice(0,24) + '…<br>Verificable con la cadena de integridad.</div>' +
+    '</body></html>'
+  );
+  ventana.document.close();
+  ventana.focus();
+  ventana.print();
+}
+
+function exportarRegistro() {
+  var cadena = cargarCadena();
+  if (!cadena.length) { setEstado("err", "No hay facturas emitidas."); return; }
+  var ult = cadena[cadena.length-1];
+  var xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+  xml += '<RegistroVeriFactu version="1.0">\n';
+  xml += '  <Factura>' + ult.numero + '</Factura>\n';
+  xml += '  <FechaEmision>' + ult.fecha + '</FechaEmision>\n';
+  xml += '  <Timestamp>' + ult.timestamp + '</Timestamp>\n';
+  xml += '  <Emisor NIF="' + EMPRESA.nif + '">' + EMPRESA.nombre + '</Emisor>\n';
+  xml += '  <Cliente NIF="' + (ult.cliente.nif||"") + '">' + ult.cliente.nombre + '</Cliente>\n';
+  xml += '  <Base>' + ult.base + '</Base>\n';
+  xml += '  <IVA>' + ult.iva + '</IVA>\n';
+  xml += '  <Total>' + ult.total + '</Total>\n';
+  xml += '  <HashAnterior>' + ult.hashAnterior + '</HashAnterior>\n';
+  xml += '  <Hash>' + ult.hash + '</Hash>\n';
+  xml += '  <TextoFirmado><![CDATA[' + ult.textoFirmado + ']]></TextoFirmado>\n';
+  xml += '</RegistroVeriFactu>';
+  descargar("registro-" + ult.numero + ".xml", xml);
+}
+
+function exportarCadena() {
+  var cadena = cargarCadena();
+  if (!cadena.length) { setEstado("err", "No hay facturas emitidas."); return; }
+  descargar("cadena-verifactu-" + EMPRESA.nif + ".json", JSON.stringify(cadena, null, 2));
+}
+
+function descargar(nombre, contenido) {
+  var blob = new Blob([contenido], {type: "text/plain"});
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = nombre;
+  a.click();
+}
+
+async function verificarCadena() {
+  var cadena = cargarCadena();
+  if (!cadena.length) { setEstado("err", "No hay facturas emitidas."); return; }
+  var ok = true;
+  var esperado = "0".repeat(64);
+  for (var i = 0; i < cadena.length; i++) {
+    if (cadena[i].hashAnterior !== esperado) { ok = false; break; }
+    var texto = cadena[i].textoFirmado;
+    var h = await sha256(texto);
+    if (h !== cadena[i].hash) { ok = false; break; }
+    esperado = cadena[i].hash;
+  }
+  if (ok) setEstado("ok", "Cadena de integridad verificada: " + cadena.length + " registros, todos con hash válido.");
+  else setEstado("err", "ALERTA: la cadena de registros ha sido alterada.");
+}
+</script>
+</body>
+</html>
